@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Transparent Master — Web UI</title>
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --muted:#94a3b8; --accent:#60a5fa; --glass: rgba(255,255,255,0.03);
+      --success:#10b981; --danger:#f87171; --surface:#0b1220;
+      --radius:12px; --gap:16px; font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{
+      background:linear-gradient(180deg,#07122b 0%, #071827 60%);
+      color:#e6eef8; -webkit-font-smoothing:antialiased; display:flex; align-items:center; justify-content:center; padding:28px;
+    }
+    .wrap{width:100%; max-width:1100px}
+    header{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+    h1{margin:0;font-size:20px}
+    p.lead{margin:0;color:var(--muted);font-size:13px}
+
+    .grid{display:grid;grid-template-columns:360px 1fr;gap:18px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:14px;border-radius:var(--radius);box-shadow:0 6px 20px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
+
+    /* left panel */
+    .drop{border:2px dashed rgba(255,255,255,0.05);border-radius:10px;padding:18px;text-align:center;cursor:pointer;background:var(--glass)}
+    .drop.dragover{border-color:var(--accent);box-shadow:0 6px 18px rgba(96,165,250,0.08)}
+    .muted{color:var(--muted);font-size:13px}
+
+    .file-list{margin-top:12px;max-height:340px;overflow:auto}
+    .file-row{display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:8px}
+    .fname{font-size:13px;color:#e6eef8}
+    .small{font-size:12px;color:var(--muted)}
+
+    label{display:block;font-size:13px;color:var(--muted);margin-top:10px}
+    .controls{display:flex;gap:8px;margin-top:10px}
+    input[type=number], select{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px;border-radius:8px;color:inherit}
+
+    button.btn{background:linear-gradient(90deg,var(--accent),#3b82f6);border:none;color:#06203a;padding:10px 12px;border-radius:10px;font-weight:600;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:8px 10px;border-radius:8px}
+
+    /* right panel */
+    .status-row{display:flex;align-items:center;justify-content:space-between}
+    .job-card{display:flex;flex-direction:column;gap:8px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,0.03);text-align:left}
+    th{font-size:12px;color:var(--muted)}
+    td a{color:var(--accent);text-decoration:none}
+
+    .log{background:rgba(0,0,0,0.15);padding:10px;border-radius:8px;color:var(--muted);font-family:monospace;font-size:12px;max-height:220px;overflow:auto}
+
+    .small-pill{background:rgba(255,255,255,0.03);padding:6px 8px;border-radius:999px;font-size:12px;color:var(--muted)}
+
+    @media (max-width:900px){.grid{grid-template-columns:1fr;}.card{padding:12px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div style="display:flex;flex-direction:column">
+        <h1>Transparent Master — Web UI</h1>
+        <p class="lead">Upload WAVs, start a batch job, and download masters. Built for your FastAPI `/jobs` backend.</p>
+      </div>
+      <div style="margin-left:auto" class="small-pill">Local / Dev</div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div id="drop" class="drop">
+          <div style="font-weight:700">Drop WAV files here</div>
+          <div class="muted">or click to pick • Supports multiple files</div>
+          <input id="fileinp" type="file" accept="audio/wav,.wav" multiple style="display:none" />
+        </div>
+
+        <label>Files to upload</label>
+        <div id="filelist" class="file-list"></div>
+
+        <label>Workers</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="workers" type="number" min="1" max="8" value="2" style="width:90px" />
+          <button id="startBtn" class="btn">Upload & Start</button>
+          <button id="clearBtn" class="ghost">Clear</button>
+        </div>
+
+        <div style="margin-top:12px;font-size:13px;color:var(--muted)">Pro tip: Use 1–2 workers on a laptop, 4+ on servers.</div>
+      </div>
+
+      <div class="card">
+        <div class="status-row">
+          <div class="job-card">
+            <div><strong>Job:</strong> <span id="jobId">—</span></div>
+            <div class="muted" id="jobStatus">idle</div>
+          </div>
+          <div style="text-align:right">
+            <div class="small">Results</div>
+            <div id="progress" class="small muted">0 / 0</div>
+          </div>
+        </div>
+
+        <div id="resultsArea"></div>
+
+        <label>Log</label>
+        <div id="log" class="log">No job yet</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const drop = document.getElementById('drop');
+  const fileinp = document.getElementById('fileinp');
+  const filelist = document.getElementById('filelist');
+  const startBtn = document.getElementById('startBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const workersEl = document.getElementById('workers');
+  const jobIdEl = document.getElementById('jobId');
+  const jobStatusEl = document.getElementById('jobStatus');
+  const progressEl = document.getElementById('progress');
+  const resultsArea = document.getElementById('resultsArea');
+  const logEl = document.getElementById('log');
+
+  let files = [];
+  let polling = null;
+
+  function renderFileList(){
+    filelist.innerHTML = '';
+    if(files.length===0){ filelist.innerHTML = '<div class="muted">No files added</div>'; return }
+    files.forEach((f, i)=>{
+      const row = document.createElement('div'); row.className='file-row';
+      row.innerHTML = `<div style="display:flex;gap:10px;align-items:center"><div class="fname">${escapeHtml(f.name)}</div><div class="small muted">${(f.size/1024|0)} KB</div></div><div><button class="ghost" onclick="removeFile(${i})">Remove</button></div>`;
+      filelist.appendChild(row);
+    });
+  }
+
+  function removeFile(idx){ files.splice(idx,1); renderFileList(); }
+
+  drop.addEventListener('click', ()=>fileinp.click());
+  fileinp.addEventListener('change', (e)=>{ for(const f of e.target.files) files.push(f); renderFileList(); });
+
+  drop.addEventListener('dragover', (e)=>{ e.preventDefault(); drop.classList.add('dragover'); });
+  drop.addEventListener('dragleave', (e)=>{ drop.classList.remove('dragover'); });
+  drop.addEventListener('drop', (e)=>{
+    e.preventDefault(); drop.classList.remove('dragover');
+    const list = e.dataTransfer.files; for(const f of list) files.push(f); renderFileList();
+  });
+
+  startBtn.addEventListener('click', startJob);
+  clearBtn.addEventListener('click', ()=>{ files=[]; renderFileList(); jobIdEl.textContent='—'; jobStatusEl.textContent='idle'; resultsArea.innerHTML=''; logEl.textContent='No job yet'; progressEl.textContent='0 / 0'; if(polling){ clearTimeout(polling); polling=null; } });
+
+  async function startJob(){
+    if(files.length===0){ alert('Add WAV files first'); return }
+    startBtn.disabled=true; startBtn.textContent='Uploading...';
+    const fd = new FormData();
+    for(const f of files) fd.append('files', f, f.name);
+    fd.append('workers', workersEl.value || '2');
+
+    try{
+      const res = await fetch('/jobs', { method:'POST', body: fd });
+      if(!res.ok){ const txt=await res.text(); throw new Error('Upload failed: '+txt) }
+      const js = await res.json();
+      jobIdEl.textContent = js.job_id;
+      jobStatusEl.textContent = js.status;
+      logEl.textContent = JSON.stringify(js, null, 2);
+      pollJob(js.job_id);
+    }catch(err){ alert(err.message); console.error(err); startBtn.disabled=false; startBtn.textContent='Upload & Start' }
+  }
+
+  async function pollJob(job_id){
+    try{
+      const res = await fetch('/jobs/' + job_id);
+      if(!res.ok){ throw new Error('Job fetch failed') }
+      const js = await res.json();
+      jobStatusEl.textContent = js.status;
+      progressEl.textContent = (js.completed||0) + ' / ' + (js.total||0);
+      logEl.textContent = JSON.stringify(js, null, 2);
+
+      if(js.results && js.results.length){
+        resultsArea.innerHTML = buildResultsTable(js.results, job_id);
+      }
+
+      if(js.status === 'running' || js.status === 'queued'){
+        polling = setTimeout(()=>pollJob(job_id), 1400);
+      } else {
+        startBtn.disabled=false; startBtn.textContent='Upload & Start';
+      }
+    }catch(e){ console.error(e); logEl.textContent = 'Polling error: '+(e.message||e); startBtn.disabled=false; startBtn.textContent='Upload & Start' }
+  }
+
+  function buildResultsTable(results, job_id){
+    const rows = results.map(r=>{
+      if(r.status==='OK'){
+        return `<tr><td>${escapeHtml(r.input)}</td><td>${r.status}</td><td><a href="/jobs/${job_id}/download/${encodeURIComponent(r.output)}">Download</a></td></tr>`
+      } else {
+        return `<tr><td>${escapeHtml(r.input||'')}</td><td style='color:var(--danger)'>${r.status}</td><td>${escapeHtml(r.error||'')}</td></tr>`
+      }
+    }).join('');
+    return `<table><thead><tr><th>File</th><th>Status</th><th>Download</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
+
+  // initial
+  renderFileList();
+</script>
+</body>
+</html>
